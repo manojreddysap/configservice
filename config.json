@@ -1,0 +1,82 @@
+{
+  "ziat003": {
+    "cf_oauth_url": "https://uaa.cf.eu21.hana.ondemand.com",
+    "user": "prisminfra@global.corp.sap",
+    "cf_base_url": "https://api.cf.eu21.hana.ondemand.com",
+    "space_id": "ab1eef62-e8f3-4590-8a0b-eb3a932f4b47",
+    "trm_url": "https://it-ziat003-trm.cfapps.eu21.hana.ondemand.com/api/trm/v1",
+	"config_url": "https://it-ziat003-config.cfapps.eu21.hana.ondemand.com/api/config/v1",
+    "trm_fwu_url": "https://it-ziat003-trm.cfapps.eu21.hana.ondemand.com/api/trm/v1/tenant-softwares/tenants",
+    "trm_wu_mon_task_url": "https://it-ziat003-trm.cfapps.eu21.hana.ondemand.com/api/trm/v1/tenant-softwares/tasks",
+    "trm_oauth_url": "https://ziat003.authentication.eu21.hana.ondemand.com/oauth/token",
+    "trm_basic_auth": "c2ItaXQhYjE0NDpmOGQ5NWU2Yi1mMGI5LTRkZjAtOWRiOC1mNjY1ODc0ZWYzMWIkSTMzWXpHS1V1VTBscjVObm1jSEdWZlNzVlU2MlBSNm44VXZUekM3a016az0=",
+    "password": "Prisminfra@007"
+  },
+  
+  "aiat001": {
+    "cf_oauth_url": "https://uaa.cf.us10.hana.ondemand.com",
+    "user": "prisminfra@global.corp.sap",
+    "cf_base_url": "https://api.cf.us10.hana.ondemand.com",
+    "space_id": "932b0383-83b6-4b8a-8ab5-2b978f1cd6a0",
+    "trm_url": "https://it-aiat001-trm.cfapps.us10.hana.ondemand.com/api/trm/v1",
+	"config_url": "https://it-aiat001-config.cfapps.us10.hana.ondemand.com/api/config/v1",
+    "trm_fwu_url": "https://it-aiat001-trm.cfapps.us10.hana.ondemand.com/api/trm/v1/tenant-softwares/tenants",
+    "trm_wu_mon_task_url": "https://it-aiat001-trm.cfapps.us10.hana.ondemand.com/api/trm/v1/tenant-softwares/tasks",
+    "trm_oauth_url": "https://aiat001.authentication.us10.hana.ondemand.com/oauth/token",
+    "trm_basic_auth": "c2ItaXQhYjIxODI6YTAzZGM3OGYtYWVhNS00NzZjLWFiZGMtNWE4MmRlYWQ5ZTQ3JFNFalFfdkd1RFdMWm41SXg0TC1IZk5ZVGZORGhyOUg5dTB6SjlfUi0taVU9",
+    "password": "Prisminfra@007"
+  },
+  
+  "ccdev001": {
+    "cf_oauth_url": "https://uaa.cf.usa10.hana.ondemand.com",
+    "user": "prisminfra@global.corp.sap",
+    "cf_base_url": "https://api.cf.us10.hana.ondemand.com",
+    "space_id": "99e7eb42-3867-4bf1-9e92-6b43fe09b24f",
+    "trm_url": "https://it-ccdev001-trm.cpi.canaryac.apps.vlab-sapcloudplatformdev.cn/api/trm/v1",
+    "trm_fwu_url": "https://it-ccdev001-trm.cpi.canaryac.apps.vlab-sapcloudplatformdev.cn/api/trm/v1/tenant-softwares/tenants",
+    "trm_wu_mon_task_url": "https://it-ccdev001-trm.cpi.canaryac.apps.vlab-sapcloudplatformdev.cn/api/trm/v1/tenant-softwares/tasks",
+    "trm_oauth_url": "https://ccdev001.authentication.canaryac.vlab-sapcloudplatformdev.cn/oauth/token",
+    "trm_basic_auth": "c2ItaXQhYjEwOTowNGY2MDQxZC01MDMyLTQ3N2ItYTY3NS01NTRhOGVlNDljMTkkR0h0Q0VVZlRsSlhJbXdGY293UjJWWjF4VER4SHJIY1dvQnhBXzU0UlE0TT0=",
+    "password": "Prisminfra@007"
+  },
+  "acdev002": {
+    "cf_oauth_url": "https://uaa.cf.eu12-001.hana.ondemand.com",
+    "user": "prisminfra@global.corp.sap",
+    "cf_base_url": "https://api.cf.eu12-001.hana.ondemand.com",
+    "space_id": "d8892cc5-7a90-4274-89fc-7f7f9e3eec08",
+    "trm_url": "https://it-acdev002-trm.cfapps.eu12-001.hana.ondemand.com/api/trm/v1",
+	"config_url": "https://it-acdev002-config.cfapps.eu12-001.hana.ondemand.com/api/config/v1",
+    "trm_fwu_url": "https://it-acdev002-trm.cfapps.eu12-001.hana.ondemand.com/api/trm/v1/tenant-softwares/tenants",
+    "trm_wu_mon_task_url": "https://it-acdev002-trm.cfapps.eu12-001.hana.ondemand.com/api/trm/v1/tenant-softwares/tasks",
+    "trm_oauth_url": "https://acdev002.authentication.eu12.hana.ondemand.com/oauth/token",
+    "trm_basic_auth": "c2ItaXQhYjE0NzpmOTU5ZmRmNy1mMmQ2LTRkMWUtOTE3NC1mYjZlNzkzNmViMWYkemNEWkFELW9YdTBYbmtOZUZ2YUtYVzBmMEJfLXRHNWdMTndvc0ZtTFRSVT0=",
+    "password": "Prisminfra@007"
+  },
+  "aciat002": {
+    "cf_oauth_url": "https://uaa.cf.eu12.hana.ondemand.com",
+    "user": "prisminfra@global.corp.sap",
+    "cf_base_url": "https://api.cf.eu12.hana.ondemand.com",
+    "space_id": "a9c2c713-494e-4037-b2a6-8fb92a8295b0",
+    "trm_url": "https://it-aciat002-trm.cfapps.eu12.hana.ondemand.com/api/trm/v1",
+	"config_url": "https://it-aciat002-config.cfapps.eu12.hana.ondemand.com/api/config/v1",
+    "trm_fwu_url": "https://it-aciat002-trm.cfapps.eu12.hana.ondemand.com/api/trm/v1/tenant-softwares/tenants",
+    "trm_wu_mon_task_url": "https://it-aciat002-trm.cfapps.eu12.hana.ondemand.com/api/trm/v1/tenant-softwares/tasks",
+    "trm_oauth_url": "https://aciat002.authentication.eu12.hana.ondemand.com/oauth/token",
+    "trm_basic_auth": "c2ItaXQhYjc2NDg6ZmIyMGZmYzktMDFjNy00ZTY2LTk2ODAtMjk3YzU3ZWY0ZTYzJEduMEtEeFYtd2Q4NTNTWTNJVXBjeElOSWU3UzhpRjZhZ3Jsdll0aXdhTE09",
+    "password": "Prisminfra@007"
+  },
+  "giat001": {
+    "cf_oauth_url": "https://uaa.cf.us31.hana.ondemand.com",
+    "user": "prisminfra@global.corp.sap",
+    "cf_base_url": "https://api.cf.us31.hana.ondemand.com",
+    "space_id": "d84bce37-ed4e-4849-8bfb-0a476bd4342e",
+    "trm_url": "https://it-giat001-trm.cfapps.us31.hana.ondemand.com/api/trm/v1",
+	"config_url": "https://it-giat001-config.cfapps.us31.hana.ondemand.com/api/config/v1",
+    "trm_fwu_url": "https://it-giat001-trm.cfapps.us31.hana.ondemand.com/api/trm/v1/tenant-softwares/tenants",
+    "trm_wu_mon_task_url": "https://it-giat001-trm.cfapps.us31.hana.ondemand.com/api/trm/v1/tenant-softwares/tasks",
+    "trm_oauth_url": "https://giat001.authentication.us31.hana.ondemand.com/oauth/token",
+    "trm_basic_auth": "c2ItaXQhYjc2NDg6ZmIyMGZmYzktMDFjNy00ZTY2LTk2ODAtMjk3YzU3ZWY0ZTYzJEduMEtEeFYtd2Q4NTNTWTNJVXBjeElOSWU3UzhpRjZhZ3Jsdll0aXdhTE09",
+    "password": "Prisminfra@007"
+  }
+}
+
