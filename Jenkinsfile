@@ -31,7 +31,6 @@ pipeline {
           if (params.MODE == 'set' && !params.ENV_VARIABLE_VALUE?.trim()) {
             error("MODE=set requires ENV_VARIABLE_VALUE (cannot be empty).")
           }
-          // MODE=read may omit TENANT (optional); that's allowed
           echo "Parameter validation passed. MODE=${params.MODE}"
         }
       }
@@ -140,14 +139,21 @@ pipeline {
       }
     }
 
-    stage('Select JSON File') {
+    stage('Select JSON Files') {
       steps {
         script {
-          // Choose internal JSON file depending on MODE
-          env.CHOSEN_JSON = (params.MODE == 'set') ? 'set_env_parameter.json' : 'tenant_credentials.json'
+          // Always pass tenant credentials and config JSON explicitly to the script
+          env.TENANTS_JSON = 'tenant_credentials.json'
+          env.CONFIG_JSON = 'set_env_parameter.json'
+
           sh """
-            if [ ! -f "${CHOSEN_JSON}" ]; then
-              echo "ERROR: JSON file ${CHOSEN_JSON} not found in workspace: ${WORKSPACE}"
+            if [ ! -f "${TENANTS_JSON}" ]; then
+              echo "ERROR: Tenants JSON ${TENANTS_JSON} not found in workspace: ${WORKSPACE}"
+              ls -la || true
+              exit 1
+            fi
+            if [ ! -f "${CONFIG_JSON}" ]; then
+              echo "ERROR: Config JSON ${CONFIG_JSON} not found in workspace: ${WORKSPACE}"
               ls -la || true
               exit 1
             fi
@@ -165,9 +171,8 @@ pipeline {
               PY_BIN="$(cat "${WORKSPACE}/.python_bin_path")"
               echo "Running with python: ${PY_BIN}"
 
-              CMD="${PY_BIN} set_env_parameter.py --mode '${MODE}' --landscape '${LANDSCAPE}' --json-file '${CHOSEN_JSON}'"
+              CMD="${PY_BIN} set_env_parameter.py --mode '${MODE}' --landscape '${LANDSCAPE}' --tenants-json '${TENANTS_JSON}' --config-json '${CONFIG_JSON}'"
 
-              # Add mutually exclusive parameters: pass only value or tenant per validation earlier
               if [ "${MODE}" = "set" ]; then
                 CMD="${CMD} --value '${ENV_VARIABLE_VALUE}' --app-name '${APP_NAME}'"
               fi
