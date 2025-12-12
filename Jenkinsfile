@@ -13,10 +13,8 @@ pipeline {
     string(name: 'TENANT', defaultValue: '', description: "Provide tenant value here if you want to read the token usage for a specific tenant")
   }
 
-  // 👇 INTERNAL values — NOT visible to users
   environment {
     APP_NAME = 'it-design-service'
-    // JSON file will be selected dynamically below — no need for UI parameter
     CF_INSTALL_URL = 'https://packages.cloudfoundry.org/stable?release=linux64-binary&source=github'
   }
 
@@ -25,26 +23,20 @@ pipeline {
     stage('Validate Tools & Params') {
       steps {
         script {
-          // install runtime deps (cf, curl, requests) if missing
           sh '''
             set -e
             echo "Running inside: $(cat /etc/os-release 2>/dev/null || echo 'unknown')"
-            # python3 is provided by the image
             command -v python3 >/dev/null 2>&1 || { echo "python3 missing — image seems wrong"; exit 1; }
 
-            # Ensure apt-get is available (python:slim images have apt)
             if command -v apt-get >/dev/null 2>&1; then
               apt-get update -y
-              # install tools needed to download cf and curl
               apt-get install -y --no-install-recommends wget curl ca-certificates unzip tar
             fi
 
-            # Install cf CLI if not present
             if ! command -v cf >/dev/null 2>&1; then
               echo "cf not found — installing cf CLI..."
               TMPDIR=$(mktemp -d)
               cd "$TMPDIR"
-              # download the official cloud foundry binary bundle (linux64)
               wget -q -O cf.tgz "${CF_INSTALL_URL}"
               tar -xzf cf.tgz -C /usr/local/bin || (echo "Extract to /usr/local/bin failed, trying /usr/bin"; tar -xzf cf.tgz -C /usr/bin)
               chmod +x /usr/local/bin/cf || true
@@ -55,10 +47,8 @@ pipeline {
               echo "cf already present: $(command -v cf)"
             fi
 
-            # Install Python dependencies required by your script
             pip3 install --no-cache-dir requests || { echo "pip install requests failed"; exit 1; }
 
-            # Verify required commands
             for cmd in python3 cf curl; do
               command -v $cmd >/dev/null 2>&1 || { echo "ERROR: required command '$cmd' missing"; exit 1; }
             done
@@ -75,7 +65,6 @@ pipeline {
     stage('Select JSON File Internally') {
       steps {
         script {
-          // 👇 internal JSON file selection based on MODE (hidden from UI)
           if (params.MODE == 'set') {
             env.CHOSEN_JSON = "set_env_parameter.json"
           } else {
@@ -128,8 +117,17 @@ pipeline {
 
   post {
     always {
-      // cf should exist in the same container; logout safely
-      sh "cf logout || true"
+      // ensure sh runs inside a node/workspace context
+      node {
+        sh '''
+          if command -v cf >/dev/null 2>&1; then
+            echo "Running cf logout..."
+            cf logout || true
+          else
+            echo "cf not available; skipping logout"
+          fi
+        '''
+      }
     }
   }
 }
