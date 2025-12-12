@@ -4,8 +4,8 @@ pipeline {
   parameters {
     choice(name: 'LANDSCAPE', choices: ['eu12','eu21','us31','eu12-fun','eu01-canary'], description: "Select landscape")
     choice(name: 'MODE', choices: ['set','read'], description: "set = update env parameter; read = get token usage")
-    string(name: 'ENV_VARIABLE_VALUE', defaultValue: '', description: "Required when MODE=set")
-    string(name: 'TENANT', defaultValue: '', description: "Tenant value for MODE=read")
+    string(name: 'ENV_VARIABLE_VALUE', defaultValue: '', description: "Required when MODE=set. Provide only when MODE=set")
+    string(name: 'TENANT', defaultValue: '', description: "Tenant value for MODE=read. Provide only when MODE=read")
   }
 
   environment {
@@ -21,7 +21,23 @@ pipeline {
 
   stages {
 
-    stage('Bootstrap Python (Robust Miniforge Install)') {
+    stage('Validate Parameters') {
+      steps {
+        script {
+          // Enforce mutual-exclusion and MODE requirements early
+          if (params.ENV_VARIABLE_VALUE?.trim() && params.TENANT?.trim()) {
+            error("Invalid parameters: provide only one of ENV_VARIABLE_VALUE or TENANT — not both.")
+          }
+          if (params.MODE == 'set' && !params.ENV_VARIABLE_VALUE?.trim()) {
+            error("MODE=set requires ENV_VARIABLE_VALUE (cannot be empty).")
+          }
+          // MODE=read may omit TENANT (optional); that's allowed
+          echo "Parameter validation passed. MODE=${params.MODE}"
+        }
+      }
+    }
+
+    stage('Bootstrap Python (Robust Miniforge)') {
       steps {
         script {
           sh '''
@@ -66,10 +82,12 @@ pipeline {
                   if [ -f "${INSTALLER}" ]; then
                     chmod +x "${INSTALLER}"
 
+                    # Do NOT pre-create MINIFORGE_DIR — installer will create it.
                     bash "${INSTALLER}" -b -p "${MINIFORGE_DIR}" > /tmp/miniforge_install_${ATTEMPTS}.log 2>&1 || true
 
+                    # If installer reported existing dir, attempt update mode as fallback
                     if grep -q "already exists" /tmp/miniforge_install_${ATTEMPTS}.log 2>/dev/null; then
-                      echo "Installer complained about existing dir. Trying update mode."
+                      echo "Installer reported existing dir. Trying update mode."
                       bash "${INSTALLER}" -u -p "${MINIFORGE_DIR}" > /tmp/miniforge_update_${ATTEMPTS}.log 2>&1 || true
                     fi
 
@@ -77,13 +95,13 @@ pipeline {
                   fi
 
                   if [ -x "${MINIFORGE_BIN}/python" ] && "${MINIFORGE_BIN}/python" -c "import sys" >/dev/null 2>&1; then
-                    echo "Miniforge installed successfully"
+                    echo "Miniforge installed and validated"
                     SUCCESS=1
                     PY_BIN="${MINIFORGE_BIN}/python"
                     break
                   fi
 
-                  echo "Install attempt ${ATTEMPTS} failed. Retrying..."
+                  echo "Install attempt ${ATTEMPTS} failed. Cleaning and retrying..."
                   rm -rf "${MINIFORGE_DIR}" || true
                   sleep 3
                 done
@@ -125,10 +143,12 @@ pipeline {
     stage('Select JSON File') {
       steps {
         script {
+          // Choose internal JSON file depending on MODE
           env.CHOSEN_JSON = (params.MODE == 'set') ? 'set_env_parameter.json' : 'tenant_credentials.json'
           sh """
             if [ ! -f "${CHOSEN_JSON}" ]; then
-              echo "ERROR: JSON file ${CHOSEN_JSON} not found"
+              echo "ERROR: JSON file ${CHOSEN_JSON} not found in workspace: ${WORKSPACE}"
+              ls -la || true
               exit 1
             fi
           """
@@ -147,6 +167,7 @@ pipeline {
 
               CMD="${PY_BIN} set_env_parameter.py --mode '${MODE}' --landscape '${LANDSCAPE}' --json-file '${CHOSEN_JSON}'"
 
+              # Add mutually exclusive parameters: pass only value or tenant per validation earlier
               if [ "${MODE}" = "set" ]; then
                 CMD="${CMD} --value '${ENV_VARIABLE_VALUE}' --app-name '${APP_NAME}'"
               fi
@@ -162,17 +183,19 @@ pipeline {
         }
       }
     }
-  }
+  } // stages
 
   post {
     always {
       script {
         sh '''
-          echo "Post Cleanup: logging out from CF"
+          echo "Post Cleanup: logging out from CF if available"
           if command -v cf >/dev/null 2>&1; then
             cf logout || true
           elif [ -x "${LOCAL_CF_BIN}" ]; then
             "${LOCAL_CF_BIN}" logout || true
+          else
+            echo "cf not available; skipping logout"
           fi
         '''
       }
