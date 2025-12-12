@@ -8,9 +8,17 @@ import sys
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+# runtime check for requests dependency
+try:
+    import requests
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+except Exception as e:
+    print("ERROR: Missing required Python package 'requests'.")
+    print("Please run: pip3 install requests")
+    print(f"Import error: {e}")
+    sys.exit(20)
+
 
 SET_JSON_FILE = "set_env_parameter.json"
 READ_JSON_FILE = "tenant_credentials.json"
@@ -31,178 +39,142 @@ def run_cmd(cmd: List[str], hide_cmd: bool = False) -> subprocess.CompletedProce
             log(f"stderr: {e.stderr.strip()}")
         raise
 
-def create_requests_session() -> requests.Session:
-    s = requests.Session()
-    r = Retry(total=3, backoff_factor=0.3, status_forcelist=(429, 500, 502, 503, 504))
-    s.mount("https://", HTTPAdapter(max_retries=r))
-    s.mount("http://", HTTPAdapter(max_retries=r))
-    return s
-
-def load_json_file(path: str) -> Dict[str, Any]:
+def load_json_file(path: str) -> Any:
     if not os.path.isfile(path):
-        log(f"❌ ERROR: JSON file not found: {path}")
-        sys.exit(1)
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except json.JSONDecodeError as e:
-        log(f"❌ ERROR: Failed to parse JSON {path}: {e}")
+        log(f"ERROR: JSON file does not exist: {path}")
         sys.exit(2)
-    except Exception as e:
-        log(f"❌ ERROR reading {path}: {e}")
-        sys.exit(3)
+    with open(path, 'r', encoding='utf-8') as fh:
+        return json.load(fh)
 
-def find_landscape(cfg: Dict[str, Any], landscape: str) -> Optional[Dict[str, Any]]:
-    for l in cfg.get("landscapes", []):
-        if str(l.get("landscape", "")).strip() == landscape:
-            return l
-    for l in cfg.get("landscapes", []):
-        api = str(l.get("cfApiEndpoint", "")).lower()
-        if landscape.lower() in api:
-            return l
+def choose_tenant_entry_by_name(tenants: List[Dict[str, Any]], tenant_name: str) -> Optional[Dict[str, Any]]:
+    for t in tenants:
+        names = [
+            t.get("name"),
+            t.get("tenant"),
+            t.get("tenantId"),
+            t.get("tenant_id"),
+            t.get("tenantName"),
+            t.get("tenant_name")
+        ]
+        if any((n and n.strip().lower() == tenant_name.strip().lower()) for n in names if n):
+            return t
     return None
 
-def find_tenant_config(cfg: Dict[str, Any], landscape: str, tenant_name: Optional[str] = None) -> Dict[str, Any]:
-    land_entry = find_landscape(cfg, landscape)
-    if land_entry is None:
-        available = [l.get("landscape") for l in cfg.get("landscapes", [])]
-        log(f"❌ ERROR: Landscape '{landscape}' not found in JSON config.")
-        log(f"Available landscapes: {available}")
+def get_bearer_token(token_url: str, client_id: str, client_secret: str, timeout: int = 30) -> Dict[str, Any]:
+    session = requests.Session()
+    retry = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    data = {
+        "grant_type": "client_credentials",
+        "client_id": client_id,
+        "client_secret": client_secret
+    }
+
+    log(f"Requesting token from {token_url}")
+    resp = session.post(token_url, data=data, headers=headers, timeout=timeout)
+    try:
+        resp.raise_for_status()
+    except Exception as e:
+        log(f"Token request failed: {e}")
+        log(f"Status: {resp.status_code}, body: {resp.text}")
+        raise
+
+    return resp.json()
+
+def call_design_service(design_url: str, access_token: str, timeout: int = 30) -> None:
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+    log(f"Calling design service at {design_url}")
+    resp = requests.get(design_url, headers=headers, timeout=timeout)
+    try:
+        resp.raise_for_status()
+    except Exception as e:
+        log(f"Design service call failed: {e}")
+        log(f"Status: {resp.status_code}, body: {resp.text}")
+        raise
+    log("Design service call successful.")
+    log(f"Response sample: {resp.text[:200]}")
+
+def set_env_parameter(design_url: str, access_token: str, app_name: str, value: str, timeout: int = 30) -> None:
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+    payload = {
+        "appName": app_name,
+        "envVarValue": value
+    }
+    log(f"Setting environment variable on {design_url} for app {app_name}")
+    resp = requests.post(design_url, headers=headers, json=payload, timeout=timeout)
+    try:
+        resp.raise_for_status()
+    except Exception as e:
+        log(f"Set env param failed: {e}")
+        log(f"Status: {resp.status_code}, body: {resp.text}")
+        raise
+    log("Environment parameter set successfully.")
+    log(f"Response sample: {resp.text[:200]}")
+
+def parse_args(argv: List[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Set or read environment parameter using design service and tenant credentials.")
+    parser.add_argument("--mode", choices=["set", "read"], required=True, help="set = set env param; read = read token usage")
+    parser.add_argument("--landscape", required=True, help="Landscape (eu12, eu21, us31, ...)")
+    parser.add_argument("--json-file", default="", help="Path to JSON file with tenant credentials")
+    parser.add_argument("--value", help="Value to set (required for mode=set)")
+    parser.add_argument("--app-name", default=DEFAULT_APP_NAME, help="Application name (for set mode)")
+    parser.add_argument("--tenant", help="Tenant name (optional, for read mode)")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    return parser.parse_args(argv)
+
+def main(argv: Optional[List[str]] = None) -> None:
+    args = parse_args(argv or sys.argv[1:])
+
+    if args.debug:
+        log(f"Args: {args}")
+
+    if args.mode == "set" and not args.value:
+        log("ERROR: mode=set requires --value")
+        sys.exit(3)
+
+    json_file = args.json_file or (SET_JSON_FILE if args.mode == "set" else READ_JSON_FILE)
+    if not os.path.isfile(json_file):
+        log(f"ERROR: specified json file not found: {json_file}")
+        sys.exit(4)
+
+    data = load_json_file(json_file)
+    # expect data structure: { "tenants": [ { tenant entry }, ... ] } or a list directly
+    tenants = []
+    if isinstance(data, dict):
+        if "tenants" in data and isinstance(data["tenants"], list):
+            tenants = data["tenants"]
+        else:
+            # maybe a mapping of tenant->config, convert to list
+            for k, v in data.items():
+                if isinstance(v, dict):
+                    v_copy = v.copy()
+                    v_copy.setdefault("name", k)
+                    tenants.append(v_copy)
+    elif isinstance(data, list):
+        tenants = data
+    else:
+        log("ERROR: JSON file has unexpected structure.")
         sys.exit(5)
 
-    tenants = land_entry.get("tenants", [])
-    if not tenants:
-        log(f"❌ ERROR: No tenants configured for landscape '{landscape}'.")
-        sys.exit(6)
-
-    if tenant_name:
-        for t in tenants:
-            if t.get("name") == tenant_name:
-                return t
-        avail = [t.get("name") for t in tenants]
-        log(f"❌ ERROR: Tenant '{tenant_name}' not found under landscape '{landscape}'.")
-        log(f"Available tenants for '{landscape}': {avail}")
-        sys.exit(7)
-
-    log(f"No --tenant provided; defaulting to the first tenant for '{landscape}': {tenants[0].get('name')}")
-    return tenants[0]
-
-def cf_login(api: str, org: str, space: str, username: str, password: str) -> None:
-    log("Logging into Cloud Foundry...")
-    run_cmd(["cf", "api", api, "--skip-ssl-validation"])
-    run_cmd(["cf", "login", "-u", username, "-p", password, "-o", org, "-s", space], hide_cmd=True)
-
-def cf_set_env(app_name: str, env_name: str, env_value: str) -> None:
-    log(f"Setting environment variable {env_name} on app {app_name} ...")
-    run_cmd(["cf", "set-env", app_name, env_name, env_value])
-
-def cf_restage(app_name: str) -> None:
-    log(f"Restaging {app_name} ...")
-    run_cmd(["cf", "restage", app_name])
-
-def get_bearer_token(token_url: str, client_id: str, client_secret: str) -> Dict[str, Any]:
-    sess = create_requests_session()
-    headers = {"Content-Type": "application/x-www-form-urlencoded"}
-    data = {"grant_type": "client_credentials", "client_id": client_id, "client_secret": client_secret}
-    log(f"Requesting token from {token_url}...")
-    try:
-        resp = sess.post(token_url, data=data, headers=headers, timeout=20)
-    except Exception as e:
-        log(f"❌ Token request failed: {e}")
-        sys.exit(8)
-    if resp.status_code != 200:
-        log(f"❌ Token endpoint returned {resp.status_code}: {resp.text}")
-        sys.exit(9)
-    payload = resp.json()
-    if "access_token" not in payload:
-        log(f"❌ Token response missing access_token: {payload}")
-        sys.exit(10)
-    return payload
-
-def call_design_service(design_url: str, access_token: str) -> None:
-    sess = create_requests_session()
-    headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
-    log(f"Calling design service: {design_url}")
-    try:
-        resp = sess.get(design_url, headers=headers, timeout=30)
-    except Exception as e:
-        log(f"❌ Design service call failed: {e}")
-        sys.exit(11)
-    if resp.status_code >= 400:
-        log(f"❌ Design service returned {resp.status_code}: {resp.text}")
-        sys.exit(12)
-    ct = resp.headers.get("Content-Type", "")
-    if "application/json" in ct:
-        try:
-            print(json.dumps(resp.json(), indent=2))
-        except Exception:
-            print(resp.text)
+    if args.tenant:
+        tenant_entry = choose_tenant_entry_by_name(tenants, args.tenant)
+        if not tenant_entry:
+            log(f"ERROR: tenant '{args.tenant}' not found in json")
+            sys.exit(6)
     else:
-        print(resp.text)
+        # pick first tenant as default
+        if not tenants:
+            log("ERROR: no tenants found in json")
+            sys.exit(7)
+        tenant_entry = tenants[0]
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Set env or read token usage")
-    parser.add_argument("--mode", required=True, choices=["set", "read"])
-    parser.add_argument("--landscape", required=True)
-    parser.add_argument("--value")
-    parser.add_argument("--tenant")
-    parser.add_argument("--json-file")
-    parser.add_argument("--app-name", default=os.environ.get("APP_NAME", DEFAULT_APP_NAME))
-    args = parser.parse_args()
-
-    mode = args.mode
-    landscape = args.landscape
-    tenant_name = args.tenant
-    json_file = args.json_file
-
-    if json_file:
-        chosen_json = json_file
-    else:
-        chosen_json = SET_JSON_FILE if mode == "set" else READ_JSON_FILE
-
-    log(f"Mode={mode} | Landscape={landscape} | JSON={chosen_json}")
-    cfg = load_json_file(chosen_json)
-
-    if mode == "set":
-        if not args.value:
-            log("❌ ERROR: --value is required in mode=set")
-            sys.exit(1)
-
-        land_entry = find_landscape(cfg, landscape)
-        if not land_entry:
-            available = [l.get("landscape") for l in cfg.get("landscapes", [])]
-            log(f"❌ ERROR: Landscape '{landscape}' not found. Available: {available}")
-            sys.exit(4)
-
-        cf_api = str(land_entry.get("cfApiEndpoint", ""))
-        cf_org = str(land_entry.get("cfOrg", ""))
-        cf_space = str(land_entry.get("cfSpace", ""))
-        p_user = str(land_entry.get("PUserName", ""))
-        p_pass = str(land_entry.get("PPassword", ""))
-        env_var_name = str(land_entry.get("env_variable_name", ""))
-
-        log("Resolved CF entry.")
-        log(f"API: {cf_api}")
-        log(f"Org/Space: {cf_org} / {cf_space}")
-        log(f"User: {p_user}")
-        log(f"Env Var: {env_var_name}")
-        log(f"Value: {args.value}")
-
-        try:
-            cf_login(cf_api, cf_org, cf_space, p_user, p_pass)
-            cf_set_env(args.app_name, env_var_name, args.value)
-            cf_restage(args.app_name)
-            log("✅ SET mode completed.")
-        finally:
-            try:
-                run_cmd(["cf", "logout"])
-            except Exception:
-                pass
-        return
-
-    tenant_entry = find_tenant_config(cfg, landscape, tenant_name)
-    client_id = tenant_entry.get("clientId") or tenant_entry.get("client_id")
-    client_secret = tenant_entry.get("clientSecret") or tenant_entry.get("client_secret")
+    # Extract fields using common key variants
+    client_id = tenant_entry.get("clientId") or tenant_entry.get("client_id") or tenant_entry.get("clientid")
+    client_secret = tenant_entry.get("clientSecret") or tenant_entry.get("client_secret") or tenant_entry.get("clientsecret")
     token_url = tenant_entry.get("tokenurl") or tenant_entry.get("tokenUrl") or tenant_entry.get("token_url")
     design_url = tenant_entry.get("designServiceUrl") or tenant_entry.get("design_service_url")
 
@@ -213,9 +185,21 @@ def main() -> None:
 
     token_payload = get_bearer_token(token_url, client_id, client_secret)
     access_token = token_payload.get("access_token")
-    log("Token acquired; calling design service...")
-    call_design_service(design_url, access_token)
-    log("✅ READ mode completed.")
+    if not access_token:
+        log("ERROR: token response did not contain access_token")
+        log(f"Token response keys: {list(token_payload.keys())}")
+        sys.exit(14)
+
+    if args.mode == "set":
+        set_env_parameter(design_url, access_token, args.app_name, args.value)
+        log("✅ SET mode completed.")
+    else:
+        # read mode: call design service or token usage endpoint depending on tenant payload
+        log("READ mode: fetching token usage / calling design service")
+        # reuse get_bearer_token and call_design_service for simple read flow
+        log("Token acquired; calling design service...")
+        call_design_service(design_url, access_token)
+        log("✅ READ mode completed.")
 
 if __name__ == "__main__":
     main()
