@@ -58,10 +58,6 @@ def load_json_file(path: str) -> Any:
 def choose_tenant_entry_by_name(
     tenants: List[Dict[str, Any]], tenant_name: str
 ) -> Optional[Dict[str, Any]]:
-    """
-    Identifies tenant by any known key name:
-      name, tenant, tenantId, tenant_id, tenantName, tenant_name
-    """
     for t in tenants:
         names = [
             t.get("name"),
@@ -82,20 +78,16 @@ def choose_tenant_entry_by_name(
 
 def extract_tenants_from_json(data: Any, landscape: Optional[str] = None) -> List[Dict[str, Any]]:
     """
-    Supports multiple JSON structures AND robust landscape fallback:
-
-    Acceptable JSON shapes:
-    - {"tenants":[...]}
-    - [ {...}, {...} ]
-    - {"landscapes":[ {"landscape":"eu12", "tenants":[...]}, ... ] }
-    - {"eu12":{"tenants":[...]}, ...}
-
-    Fallback matching:
-    - Exact match
-    - If landscape contains '-', try prefix (eu12-fun → eu12)
-    - startswith() matching
+    Supports multiple JSON structures and robust landscape fallback:
+      - {"tenants": [...]}
+      - [ {...}, {...} ]
+      - {"landscapes": [ {"landscape":"eu12","tenants":[...]}, ... ]}
+      - {"eu12": {"tenants":[...]}, ...}
+    Fallbacks:
+      - exact match
+      - if landscape contains '-', try prefix before dash (eu12-fun -> eu12)
+      - startswith matching
     """
-
     # Case A: dict with "tenants"
     if isinstance(data, dict) and "tenants" in data and isinstance(data["tenants"], list):
         return data["tenants"]
@@ -111,13 +103,12 @@ def extract_tenants_from_json(data: Any, landscape: Optional[str] = None) -> Lis
         t = obj.get("tenants")
         if isinstance(t, list):
             return t
-        # fallback for variations
         for key in ("tenantList", "tenantsList"):
             if key in obj and isinstance(obj[key], list):
                 return obj[key]
         return []
 
-    # Case C: "landscapes": [...]
+    # Case C: landscapes array
     if isinstance(data, dict) and "landscapes" in data and isinstance(data["landscapes"], list):
         landscapes = data["landscapes"]
 
@@ -130,7 +121,7 @@ def extract_tenants_from_json(data: Any, landscape: Optional[str] = None) -> Lis
                 if lname and lname.strip().lower() == landscape.strip().lower():
                     return tenants_from_landscape_obj(l)
 
-        # dash-prefix fallback: eu12-fun → eu12
+        # dash-prefix fallback
         if landscape and "-" in landscape:
             prefix = landscape.split("-", 1)[0].strip().lower()
             for l in landscapes:
@@ -150,15 +141,14 @@ def extract_tenants_from_json(data: Any, landscape: Optional[str] = None) -> Lis
                 if lname and lname.strip().lower().startswith(ls):
                     return tenants_from_landscape_obj(l)
 
-        # fallback: first landscape's tenants
+        # fallback: first landscape tenants
         if not landscape and landscapes:
             return tenants_from_landscape_obj(landscapes[0])
 
         return []
 
-    # Case D: mapping of landscape → object
+    # Case D: mapping of landscape -> object
     if isinstance(data, dict):
-        # direct match
         if landscape and landscape in data:
             candidate = data[landscape]
             if isinstance(candidate, dict) and isinstance(candidate.get("tenants"), list):
@@ -166,7 +156,6 @@ def extract_tenants_from_json(data: Any, landscape: Optional[str] = None) -> Lis
             if isinstance(candidate, list):
                 return candidate
 
-        # dash-prefix fallback
         if landscape and "-" in landscape:
             prefix = landscape.split("-", 1)[0].strip()
             if prefix in data:
@@ -176,7 +165,6 @@ def extract_tenants_from_json(data: Any, landscape: Optional[str] = None) -> Lis
                 if isinstance(candidate, list):
                     return candidate
 
-        # fallback: convert dict to list of tenant dicts
         potential = []
         for k, v in data.items():
             if isinstance(v, dict):
@@ -201,64 +189,53 @@ def get_bearer_token(token_url: str, client_id: str, client_secret: str, timeout
 
     log(f"Requesting token from {token_url}")
     resp = session.post(token_url, data=data, headers=headers, timeout=timeout)
-
     try:
         resp.raise_for_status()
     except Exception as e:
         log(f"Token request failed: {e}")
         log(f"Status: {resp.status_code}, Body: {resp.text}")
         raise
-
     return resp.json()
 
 
 def set_env_parameter(design_url: str, access_token: str, app_name: str, value: str, timeout: int = 30) -> None:
     headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
-
     payload = {"appName": app_name, "envVarValue": value}
-
     log(f"Setting environment parameter for {app_name} on {design_url}")
     resp = requests.post(design_url, json=payload, headers=headers, timeout=timeout)
-
     try:
         resp.raise_for_status()
     except Exception as e:
         log(f"Set env parameter failed: {e}")
         log(f"Status: {resp.status_code}, Body: {resp.text}")
         raise
-
     log("Environment parameter updated successfully.")
     log(f"Response snippet: {resp.text[:200]}")
 
 
 def call_design_service(design_url: str, access_token: str, timeout: int = 30) -> None:
     headers = {"Authorization": f"Bearer {access_token}"}
-
     log(f"Calling design service: {design_url}")
     resp = requests.get(design_url, headers=headers, timeout=timeout)
-
     try:
         resp.raise_for_status()
     except Exception as e:
         log(f"Design service call failed: {e}")
         log(f"Status: {resp.status_code}, Body: {resp.text}")
         raise
-
     log("Design service responded successfully.")
     log(f"Response snippet: {resp.text[:200]}")
 
 
 def parse_args(argv=None):
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument("--mode", choices=["set", "read"], required=True)
-    parser.add_argument("--landscape", required=True)
-    parser.add_argument("--json-file", default="")
-    parser.add_argument("--value")
-    parser.add_argument("--app-name", default=DEFAULT_APP_NAME)
-    parser.add_argument("--tenant")
-    parser.add_argument("--debug", action="store_true")
-
+    parser = argparse.ArgumentParser(description="Set or read environment parameter using design service and tenant credentials.")
+    parser.add_argument("--mode", choices=["set", "read"], required=True, help="set = set env param; read = read token usage")
+    parser.add_argument("--landscape", required=True, help="Landscape (eu12, eu21, us31, ...)")
+    parser.add_argument("--json-file", default="", help="Path to JSON file with tenant credentials")
+    parser.add_argument("--value", help="Value to set (required for mode=set)")
+    parser.add_argument("--app-name", default=DEFAULT_APP_NAME, help="Application name (for set mode)")
+    parser.add_argument("--tenant", help="Tenant name (optional, for read mode)")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     return parser.parse_args(argv)
 
 
@@ -268,18 +245,25 @@ def main(argv=None):
     if args.debug:
         log(f"Arguments: {args}")
 
+    # Enforce mutual exclusivity for script use (defensive)
+    if args.value and args.tenant:
+        log("ERROR: Provide either --value (for MODE=set) or --tenant (for MODE=read), but not both.")
+        sys.exit(21)
+
     if args.mode == "set" and not args.value:
-        log("ERROR: MODE=set requires --value")
+        log("ERROR: mode=set requires --value")
         sys.exit(3)
 
     json_file = args.json_file or (SET_JSON_FILE if args.mode == "set" else READ_JSON_FILE)
+    if not os.path.isfile(json_file):
+        log(f"ERROR: specified json file not found: {json_file}")
+        sys.exit(4)
 
     data = load_json_file(json_file)
 
     tenants = extract_tenants_from_json(data, landscape=args.landscape)
-
     if args.debug:
-        log(f"Tenants extracted: {len(tenants)}")
+        log(f"Extracted {len(tenants)} tenant entries (after landscape selection)")
 
     if not tenants:
         log(f"ERROR: no tenants found in json for landscape '{args.landscape}'")
@@ -289,34 +273,18 @@ def main(argv=None):
         tenant_entry = choose_tenant_entry_by_name(tenants, args.tenant)
         if not tenant_entry:
             log(f"ERROR: tenant '{args.tenant}' not found in json for landscape '{args.landscape}'")
-            log("Available tenants:")
+            log("Available tenants for this landscape:")
             for t in tenants:
-                log(f" - {t.get('name') or t.get('tenant')}")
+                log(f" - {t.get('name') or t.get('tenant') or '(unknown)'}")
             sys.exit(6)
     else:
         tenant_entry = tenants[0]
-        log(f"Defaulting to first tenant: {tenant_entry.get('name')}")
+        log(f"No --tenant provided; defaulting to first tenant: {tenant_entry.get('name') or tenant_entry.get('tenant')}")
 
-    client_id = (
-        tenant_entry.get("clientId")
-        or tenant_entry.get("client_id")
-        or tenant_entry.get("clientid")
-    )
-    client_secret = (
-        tenant_entry.get("clientSecret")
-        or tenant_entry.get("client_secret")
-        or tenant_entry.get("clientsecret")
-    )
-    token_url = (
-        tenant_entry.get("tokenurl")
-        or tenant_entry.get("tokenUrl")
-        or tenant_entry.get("token_url")
-    )
-    design_url = (
-        tenant_entry.get("designServiceUrl")
-        or tenant_entry.get("design_service_url")
-        or tenant_entry.get("designUrl")
-    )
+    client_id = tenant_entry.get("clientId") or tenant_entry.get("client_id") or tenant_entry.get("clientid")
+    client_secret = tenant_entry.get("clientSecret") or tenant_entry.get("client_secret") or tenant_entry.get("clientsecret")
+    token_url = tenant_entry.get("tokenurl") or tenant_entry.get("tokenUrl") or tenant_entry.get("token_url")
+    design_url = tenant_entry.get("designServiceUrl") or tenant_entry.get("design_service_url") or tenant_entry.get("designUrl")
 
     if not (client_id and client_secret and token_url and design_url):
         log("ERROR: tenant entry missing required fields (clientId/clientSecret/tokenurl/designServiceUrl)")
@@ -324,7 +292,6 @@ def main(argv=None):
 
     token_data = get_bearer_token(token_url, client_id, client_secret)
     access_token = token_data.get("access_token")
-
     if not access_token:
         log("ERROR: no access_token in token response")
         sys.exit(14)
