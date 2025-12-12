@@ -11,7 +11,7 @@ pipeline {
   environment {
     APP_NAME = 'it-design-service'
     CF_INSTALL_URL = 'https://packages.cloudfoundry.org/stable?release=linux64-binary&source=github'
-    # local cf install dir inside workspace
+    // local cf install dir inside workspace
     LOCAL_CF_DIR = "${env.WORKSPACE ?: 'workspace'}/cfcli"
     LOCAL_CF_BIN = "${env.WORKSPACE ?: 'workspace'}/cfcli/cf"
   }
@@ -21,14 +21,12 @@ pipeline {
     stage('Prepare Environment') {
       steps {
         script {
-          // ensure workspace exists
           sh '''
             set -e
             echo "Workspace: ${WORKSPACE:-unknown}"
             echo "UID: $(id -u)  GID: $(id -g)  USER: $(whoami 2>/dev/null || true)"
           '''
 
-          // Attempt to ensure system has minimal tools: python3, pip3, curl/wget
           sh '''
             set -e
             echo "=== CHECK FOR python3 ==="
@@ -36,7 +34,6 @@ pipeline {
               echo "python3 present: $(python3 --version)"
             else
               echo "python3 not found"
-              # try apt-get if available (best-effort)
               if command -v apt-get >/dev/null 2>&1; then
                 echo "Attempting apt-get install python3 python3-pip (requires permission)..."
                 apt-get update -y || true
@@ -125,15 +122,12 @@ pipeline {
       }
     }
 
-    // Run the python script but ensure failures don't prevent the final cleanup stage from running.
     stage('Run Python Script') {
       steps {
         script {
-          // This catchError ensures the pipeline continues to post/cleanup even if script fails.
           catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
             sh '''
               set -e
-              # choose python binary
               if command -v python3 >/dev/null 2>&1; then
                 PY=python3
               else
@@ -141,7 +135,6 @@ pipeline {
                 exit 2
               fi
 
-              # build command
               CMD="${PY} set_env_parameter.py --mode '${MODE}' --landscape '${LANDSCAPE}' --json-file '${CHOSEN_JSON}'"
               if [ "${MODE}" = "set" ]; then
                 CMD="${CMD} --value '${ENV_VARIABLE_VALUE}' --app-name '${APP_NAME}'"
@@ -153,16 +146,15 @@ pipeline {
               echo "Executing: ${CMD}"
               eval ${CMD}
             '''
-          } // catchError
+          }
         }
       }
     }
-  } // stages
+  }
 
   post {
     always {
       script {
-        // attempt to use system cf, else fall back to local CF binary in workspace
         sh '''
           set -e || true
           echo "POST: attempt cf logout (system cf or local cf)"
