@@ -20,7 +20,7 @@ except Exception as e:
     sys.exit(20)
 
 SET_JSON_FILE = "set_env_parameter.json"
-READ_JSON_FILE = "tenant_credentials.json"
+TENANTS_JSON_FILE = "tenant_credentials.json"
 DEFAULT_APP_NAME = "it-design-service"
 
 
@@ -274,12 +274,13 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Set or read environment parameter using design service and tenant credentials.")
     parser.add_argument("--mode", choices=["set", "read"], required=False, help="set = set env param; read = read token usage")
     parser.add_argument("--landscape", required=False, help="Landscape (eu12, eu21, us31, ...)")
-    parser.add_argument("--json-file", default="", help="Path to JSON file with tenant credentials")
+    parser.add_argument("--tenants-json", default=TENANTS_JSON_FILE, help="Path to tenant credentials JSON (tenant credentials).")
+    parser.add_argument("--config-json", default=SET_JSON_FILE, help="Path to config JSON (set_env_parameter.json) with landscape-level config.")
     parser.add_argument("--value", help="Value to set (required for mode=set)")
     parser.add_argument("--app-name", default=DEFAULT_APP_NAME, help="Application name (for set mode)")
     parser.add_argument("--tenant", help="Tenant name (optional, for read mode)")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
-    parser.add_argument("--list-tenants", action="store_true", help="List detected landscapes and tenants from JSON and exit")
+    parser.add_argument("--list-tenants", action="store_true", help="List detected landscapes and tenants from tenants-json and exit")
     return parser.parse_args(argv)
 
 
@@ -289,13 +290,13 @@ def main(argv=None):
     if args.debug:
         log(f"Arguments: {args}")
 
-    # if user asked to list tenants, only do that and exit
-    json_file = args.json_file or (SET_JSON_FILE if args.mode == "set" else READ_JSON_FILE)
+    # if user asked to list tenants, only do that and exit (reads tenants-json)
     if args.list_tenants:
-        if not os.path.isfile(json_file):
-            log(f"ERROR: JSON file not found: {json_file}")
+        tenants_json_path = args.tenants_json or TENANTS_JSON_FILE
+        if not os.path.isfile(tenants_json_path):
+            log(f"ERROR: Tenants JSON file not found: {tenants_json_path}")
             sys.exit(4)
-        data = load_json_file(json_file)
+        data = load_json_file(tenants_json_path)
         list_landscapes_and_tenants(data)
         sys.exit(0)
 
@@ -316,14 +317,21 @@ def main(argv=None):
         log("ERROR: mode=set requires --value")
         sys.exit(3)
 
-    json_file = args.json_file or (SET_JSON_FILE if args.mode == "set" else READ_JSON_FILE)
-    if not os.path.isfile(json_file):
-        log(f"ERROR: specified json file not found: {json_file}")
+    tenants_json_path = args.tenants_json or TENANTS_JSON_FILE
+    config_json_path = args.config_json or SET_JSON_FILE
+
+    if not os.path.isfile(tenants_json_path):
+        log(f"ERROR: tenants json file not found: {tenants_json_path}")
+        sys.exit(4)
+    if not os.path.isfile(config_json_path):
+        log(f"ERROR: config json file not found: {config_json_path}")
         sys.exit(4)
 
-    data = load_json_file(json_file)
+    tenants_data = load_json_file(tenants_json_path)
+    # config_data currently not required for tenant lookup, but loaded for completeness
+    config_data = load_json_file(config_json_path)
 
-    tenants = extract_tenants_from_json(data, landscape=args.landscape)
+    tenants = extract_tenants_from_json(tenants_data, landscape=args.landscape)
     if args.debug:
         log(f"Extracted {len(tenants)} tenant entries (after landscape selection)")
 
@@ -331,23 +339,21 @@ def main(argv=None):
     if not tenants:
         # For set mode, fall back to first landscape's tenants if available (conservative auto-fix)
         if args.mode == "set":
-            log(f"WARNING: no tenants found in json for landscape '{args.landscape}'. Attempting fallback to first available landscape.")
-            # extract tenants without specifying landscape to get first available (function returns first landscape tenants)
-            tenants = extract_tenants_from_json(data, landscape=None)
+            log(f"WARNING: no tenants found in tenants-json for landscape '{args.landscape}'. Attempting fallback to first available landscape.")
+            tenants = extract_tenants_from_json(tenants_data, landscape=None)
             if tenants:
                 log(f"Fallback succeeded: using first landscape which has {len(tenants)} tenant(s). Proceeding with first tenant.")
             else:
-                log(f"ERROR: no tenants available anywhere in JSON. Aborting.")
+                log(f"ERROR: no tenants available anywhere in tenants-json. Aborting.")
                 sys.exit(7)
         else:
-            # read mode requires explicit tenant (do not auto-fix)
-            log(f"ERROR: no tenants found in json for landscape '{args.landscape}'")
+            log(f"ERROR: no tenants found in tenants-json for landscape '{args.landscape}'")
             sys.exit(7)
 
     if args.tenant:
         tenant_entry = choose_tenant_entry_by_name(tenants, args.tenant)
         if not tenant_entry:
-            log(f"ERROR: tenant '{args.tenant}' not found in json for landscape '{args.landscape}'")
+            log(f"ERROR: tenant '{args.tenant}' not found in tenants-json for landscape '{args.landscape}'")
             log("Available tenants for this landscape:")
             for t in tenants:
                 log(f" - {t.get('name') or t.get('tenant') or '(unknown)'}")
