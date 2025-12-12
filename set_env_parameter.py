@@ -60,6 +60,63 @@ def choose_tenant_entry_by_name(tenants: List[Dict[str, Any]], tenant_name: str)
             return t
     return None
 
+def extract_tenants_from_json(data: Any, landscape: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    Support multiple layout possibilities:
+      - {"tenants": [ ... ]} -> returns that list
+      - [ {tenant entries} ] -> returns that list
+      - {"landscapes": [ {"landscape":"eu12", "tenants":[ ... ] }, ... ] } -> select by landscape
+      - {"eu12": { "tenants": [...] }, ... } -> map-style
+    """
+    # Case A: dict with "tenants" list
+    if isinstance(data, dict) and "tenants" in data and isinstance(data["tenants"], list):
+        return data["tenants"]
+
+    # Case B: list at top-level
+    if isinstance(data, list):
+        # assume list of tenant dicts
+        return data
+
+    # Case C: landscapes structure
+    if isinstance(data, dict) and "landscapes" in data and isinstance(data["landscapes"], list):
+        if not landscape:
+            # If landscape not provided, use first landscape's tenants
+            first = data["landscapes"][0]
+            return first.get("tenants", []) if isinstance(first, dict) else []
+        # find matching landscape
+        for l in data["landscapes"]:
+            try:
+                lname = l.get("landscape") or l.get("name") or l.get("id")
+            except Exception:
+                lname = None
+            if lname and lname.strip().lower() == landscape.strip().lower():
+                tenants = l.get("tenants")
+                return tenants if isinstance(tenants, list) else []
+        # not found -> return empty
+        return []
+
+    # Case D: mapping of landscape->object
+    if isinstance(data, dict):
+        # try direct key match: data["eu12"]["tenants"] or data["eu12"] could be list
+        if landscape and landscape in data:
+            candidate = data[landscape]
+            if isinstance(candidate, dict) and "tenants" in candidate and isinstance(candidate["tenants"], list):
+                return candidate["tenants"]
+            if isinstance(candidate, list):
+                return candidate
+        # else maybe dict keys are tenant names -> convert to list
+        potential = []
+        for k, v in data.items():
+            if isinstance(v, dict):
+                d = v.copy()
+                d.setdefault("name", k)
+                potential.append(d)
+        if potential:
+            return potential
+
+    # default: empty list
+    return []
+
 def get_bearer_token(token_url: str, client_id: str, client_secret: str, timeout: int = 30) -> Dict[str, Any]:
     session = requests.Session()
     retry = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
@@ -142,44 +199,40 @@ def main(argv: Optional[List[str]] = None) -> None:
         sys.exit(4)
 
     data = load_json_file(json_file)
-    # expect data structure: { "tenants": [ { tenant entry }, ... ] } or a list directly
-    tenants = []
-    if isinstance(data, dict):
-        if "tenants" in data and isinstance(data["tenants"], list):
-            tenants = data["tenants"]
-        else:
-            # maybe a mapping of tenant->config, convert to list
-            for k, v in data.items():
-                if isinstance(v, dict):
-                    v_copy = v.copy()
-                    v_copy.setdefault("name", k)
-                    tenants.append(v_copy)
-    elif isinstance(data, list):
-        tenants = data
-    else:
-        log("ERROR: JSON file has unexpected structure.")
-        sys.exit(5)
+
+    # Extract tenants according to possible structures, honoring the --landscape selection
+    tenants = extract_tenants_from_json(data, landscape=args.landscape)
+    if args.debug:
+        log(f"Extracted {len(tenants)} tenant entries (after landscape selection)")
 
     if args.tenant:
         tenant_entry = choose_tenant_entry_by_name(tenants, args.tenant)
         if not tenant_entry:
-            log(f"ERROR: tenant '{args.tenant}' not found in json")
+            log(f"ERROR: tenant '{args.tenant}' not found in json for landscape '{args.landscape}'")
+            # Provide helpful diagnostic
+            if tenants:
+                log("Available tenants for this landscape:")
+                for t in tenants:
+                    log(f" - {t.get('name') or t.get('tenant') or '(unknown)'}")
+            else:
+                log("No tenants found for requested landscape.")
             sys.exit(6)
     else:
         # pick first tenant as default
         if not tenants:
-            log("ERROR: no tenants found in json")
+            log(f"ERROR: no tenants found in json for landscape '{args.landscape}'")
             sys.exit(7)
         tenant_entry = tenants[0]
+        log(f"No --tenant provided; defaulting to first tenant: {tenant_entry.get('name') or tenant_entry.get('tenant')}")
 
     # Extract fields using common key variants
     client_id = tenant_entry.get("clientId") or tenant_entry.get("client_id") or tenant_entry.get("clientid")
     client_secret = tenant_entry.get("clientSecret") or tenant_entry.get("client_secret") or tenant_entry.get("clientsecret")
     token_url = tenant_entry.get("tokenurl") or tenant_entry.get("tokenUrl") or tenant_entry.get("token_url")
-    design_url = tenant_entry.get("designServiceUrl") or tenant_entry.get("design_service_url")
+    design_url = tenant_entry.get("designServiceUrl") or tenant_entry.get("design_service_url") or tenant_entry.get("designUrl")
 
     if not (client_id and client_secret and token_url and design_url):
-        log("❌ ERROR: tenant config missing required fields.")
+        log("❌ ERROR: tenant config missing required fields (clientId/clientSecret/tokenurl/designServiceUrl).")
         log(f"Tenant keys: {list(tenant_entry.keys())}")
         sys.exit(13)
 
@@ -194,10 +247,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         set_env_parameter(design_url, access_token, args.app_name, args.value)
         log("✅ SET mode completed.")
     else:
-        # read mode: call design service or token usage endpoint depending on tenant payload
-        log("READ mode: fetching token usage / calling design service")
-        # reuse get_bearer_token and call_design_service for simple read flow
-        log("Token acquired; calling design service...")
+        log("READ mode: calling design service (or token usage endpoint if configured)")
         call_design_service(design_url, access_token)
         log("✅ READ mode completed.")
 
