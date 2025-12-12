@@ -1,8 +1,8 @@
 pipeline {
   agent {
     docker {
-      image 'python:3.11-slim'        // Public Python image
-      args  '-u root:root'            // Needed for apt-get installs
+      image 'python:3.11-slim'
+      args  '-u root:root'
     }
   }
 
@@ -25,21 +25,18 @@ pipeline {
         script {
           sh '''
             set -e
-            echo "=== SYSTEM INFORMATION ==="
+            echo "=== SYSTEM INFO ==="
             cat /etc/os-release || true
 
-            echo "=== INSTALLING REQUIRED TOOLS (curl, wget, unzip, tar) ==="
             if command -v apt-get >/dev/null 2>&1; then
               apt-get update -y
               apt-get install -y --no-install-recommends wget curl ca-certificates unzip tar
             fi
 
-            echo "=== CHECK PYTHON3 ==="
             command -v python3 >/dev/null 2>&1 || { echo "python3 missing"; exit 1; }
 
-            echo "=== INSTALL CF CLI IF MISSING ==="
             if ! command -v cf >/dev/null 2>&1; then
-              echo "Installing Cloud Foundry CLI..."
+              echo "Installing cf..."
               TMPDIR=$(mktemp -d)
               cd "$TMPDIR"
               wget -q -O cf.tgz "${CF_INSTALL_URL}"
@@ -49,15 +46,13 @@ pipeline {
               rm -rf "$TMPDIR"
             fi
 
-            command -v cf >/dev/null 2>&1 || { echo "cf installation failed"; exit 1; }
-
-            echo "=== INSTALL PYTHON DEPENDENCIES ==="
             pip3 install --no-cache-dir requests
 
-            echo "=== FINAL VALIDATION ==="
-            command -v python3
-            command -v cf
-            command -v curl
+            for cmd in python3 cf curl; do
+              command -v $cmd >/dev/null 2>&1 || { echo "ERROR: $cmd missing"; exit 1; }
+            done
+
+            echo "Validation OK: python3 $(python3 --version), cf $(cf --version)"
           '''
 
           if (params.MODE == 'set' && !params.ENV_VARIABLE_VALUE?.trim()) {
@@ -123,14 +118,18 @@ pipeline {
   post {
     always {
       script {
-        sh '''
-          echo "=== POST CLEANUP: CF LOGOUT ==="
-          if command -v cf >/dev/null 2>&1; then
-            cf logout || true
-          else
-            echo "cf not found — skipping logout"
-          fi
-        '''
+        echo "=== POST: ensuring cf logout inside a docker container (provides workspace) ==="
+        // Use docker.image(...).inside to ensure a workspace/FilePath is available for sh.
+        docker.image('python:3.11-slim').inside('-u root:root') {
+          sh '''
+            if command -v cf >/dev/null 2>&1; then
+               echo "Running cf logout..."
+               cf logout || true
+            else
+               echo "cf not available in container; skipping logout"
+            fi
+          '''
+        }
       }
     }
   }
