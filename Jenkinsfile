@@ -11,11 +11,12 @@ pipeline {
   environment {
     APP_NAME = 'it-design-service'
     CF_INSTALL_URL = 'https://packages.cloudfoundry.org/stable?release=linux64-binary&source=github'
+    // local cf install dir inside workspace
     LOCAL_CF_DIR = "${env.WORKSPACE ?: 'workspace'}/cfcli"
     LOCAL_CF_BIN = "${env.WORKSPACE ?: 'workspace'}/cfcli/cf"
     MINIFORGE_DIR = "${env.WORKSPACE ?: 'workspace'}/miniforge"
     MINIFORGE_BIN = "${env.WORKSPACE ?: 'workspace'}/miniforge/bin"
-    # Miniforge installer URL (x86_64 Linux)
+    // Miniforge installer URL (x86_64 Linux)
     MINIFORGE_URL = "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh"
   }
 
